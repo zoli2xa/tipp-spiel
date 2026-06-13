@@ -417,7 +417,6 @@ function handleKeyPress(e) {
             if (state.currentPos >= state.currentItem.length) {
                 onWordComplete();
             } else {
-                flashOverlay("correct", 80);
                 patchGame();
             }
         } else {
@@ -429,7 +428,6 @@ function handleKeyPress(e) {
 function onLetterCorrect() {
     state.progress++;
     state.totalScore++;
-    flashOverlay("correct", 120);
     if (!checkLevelComplete()) nextItem();
 }
 
