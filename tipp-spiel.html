@@ -375,6 +375,7 @@ function startLevel(idx) {
         state.itemPool = pool;
     }
     state.itemIndex = 0;
+    state._fullRenderNext = true;
     nextItem();
 }
 
@@ -383,13 +384,20 @@ function nextItem() {
     state.itemIndex++;
     state.currentPos = 0;
     state.lastAnimal = null;
-    render();
+
+    if (state._fullRenderNext) {
+        state._fullRenderNext = false;
+        render();
+    } else {
+        updateTargetArea();
+        patchGame();
+    }
 }
 
 function handleKeyPress(e) {
     if (state.screen !== "game") return;
     if (e.ctrlKey || e.altKey || e.metaKey) return;
-    if (state.shaking) return; // debounce during shake
+    if (state.shaking) return;
 
     const key = e.key.toLowerCase();
     if (key.length !== 1 || !key.match(/[a-z]/)) return;
@@ -410,7 +418,7 @@ function handleKeyPress(e) {
                 onWordComplete();
             } else {
                 flashOverlay("correct", 80);
-                render();
+                patchGame();
             }
         } else {
             onWrong(key);
@@ -433,7 +441,7 @@ function onWordComplete() {
         name: state.currentItem
     };
     flashOverlay("correct", 180);
-    render();
+    patchGame();
     if (!checkLevelComplete()) {
         setTimeout(() => { if (state.screen === "game") nextItem(); }, 1300);
     }
@@ -444,7 +452,7 @@ function onWrong(key) {
     state.wrongKey = key;
     state.shaking = true;
     flashOverlay("wrong", 350);
-    render();
+    patchGame();
 
     setTimeout(() => {
         state.wrongKey = null;
@@ -452,7 +460,7 @@ function onWrong(key) {
         if (state.hearts <= 0) {
             startLevel(state.levelIdx);
         } else {
-            render();
+            patchGame();
         }
     }, 420);
 }
@@ -492,7 +500,90 @@ function getTargetKey() {
 }
 
 // ════════════════════════════════════════
-// RENDER
+// PATCH (targeted in-game updates — no full re-render)
+// ════════════════════════════════════════
+
+function updateTargetArea() {
+    const area = document.getElementById("targetArea");
+    if (!area) return;
+    const level = LEVELS[state.levelIdx];
+    if (level.type === "letters") {
+        area.innerHTML = `
+            <div class="target-label">Tippe diesen Buchstaben:</div>
+            <div class="target-letter" id="targetLetter">${state.currentItem.toUpperCase()}</div>`;
+    } else {
+        area.innerHTML = `
+            <div class="target-label">Tippe dieses Wort:</div>
+            <div class="target-word" id="targetWord">
+                ${[...state.currentItem].map((ch, i) =>
+                    `<div class="letter-box${i === 0 ? " current" : ""}">${ch}</div>`
+                ).join("")}
+            </div>`;
+    }
+}
+
+function patchGame() {
+    const level = LEVELS[state.levelIdx];
+    const targetKey = getTargetKey();
+
+    // Hearts
+    const heartsEl = document.getElementById("hearts");
+    if (heartsEl) heartsEl.innerHTML = "❤️".repeat(state.hearts) + "🖤".repeat(3 - state.hearts);
+
+    // Score
+    const scoreEl = document.getElementById("score");
+    if (scoreEl) scoreEl.textContent = `⭐ ${state.totalScore}`;
+
+    // Progress
+    const pct = Math.min(100, (state.progress / level.target) * 100);
+    const fillEl = document.getElementById("progressFill");
+    const labelEl = document.getElementById("progressLabel");
+    if (fillEl) fillEl.style.width = pct + "%";
+    if (labelEl) labelEl.textContent = `Fortschritt: ${state.progress} / ${level.target}`;
+
+    // Target display
+    if (level.type === "letters") {
+        const el = document.getElementById("targetLetter");
+        if (el) {
+            el.textContent = state.currentItem.toUpperCase();
+            el.className = "target-letter" + (state.shaking ? " shake" : "");
+        }
+    } else {
+        const boxes = document.querySelectorAll("#targetArea .letter-box");
+        boxes.forEach((box, i) => {
+            box.className = "letter-box" +
+                (i === state.currentPos ? " current" : i < state.currentPos ? " done" : "");
+        });
+        const wordEl = document.getElementById("targetWord");
+        if (wordEl) wordEl.className = "target-word" + (state.shaking ? " shake" : "");
+    }
+
+    // Keyboard
+    document.querySelectorAll(".key").forEach(el => {
+        const k = el.dataset.key;
+        el.className = "key";
+        if (k === targetKey) el.classList.add("highlight");
+        if (k === state.wrongKey) el.classList.add("flash-wrong");
+    });
+
+    // Animal reward
+    const emojiEl = document.getElementById("animalEmoji");
+    const nameEl  = document.getElementById("animalName");
+    if (emojiEl && nameEl) {
+        if (state.lastAnimal) {
+            emojiEl.textContent = state.lastAnimal.emoji;
+            nameEl.textContent  = `Super! ${state.lastAnimal.name}! 🌟`;
+            emojiEl.className = "animal-emoji show";
+            nameEl.className  = "animal-name show";
+        } else {
+            emojiEl.className = "animal-emoji";
+            nameEl.className  = "animal-name";
+        }
+    }
+}
+
+// ════════════════════════════════════════
+// RENDER (screen transitions only)
 // ════════════════════════════════════════
 
 function render() {
@@ -543,33 +634,31 @@ function renderGame() {
             </div>`;
     }
 
-    const animalHtml = state.lastAnimal
-        ? `<div class="animal-emoji show">${state.lastAnimal.emoji}</div>
-           <div class="animal-name show">Super! ${state.lastAnimal.name}! 🌟</div>`
-        : "";
-
     const keyboardHtml = KEYBOARD_ROWS.map(row =>
         `<div class="keyboard-row">${row.map(k => {
             let cls = "key";
             if (k === targetKey) cls += " highlight";
             if (k === state.wrongKey) cls += " flash-wrong";
-            return `<div class="${cls}">${k.toUpperCase()}</div>`;
+            return `<div class="${cls}" data-key="${k}">${k.toUpperCase()}</div>`;
         }).join("")}</div>`
     ).join("");
 
     return `<div class="card">
         <div class="game-header">
             <div class="level-badge">${level.name}: ${level.title}</div>
-            <div class="hearts">${heartsHtml}</div>
-            <div class="score">⭐ ${state.totalScore}</div>
+            <div class="hearts" id="hearts">${heartsHtml}</div>
+            <div class="score" id="score">⭐ ${state.totalScore}</div>
         </div>
         <div class="tip-box">${level.tip}</div>
-        <div class="target-area">${targetHtml}</div>
-        <div class="animal-reward">${animalHtml}</div>
+        <div class="target-area" id="targetArea">${targetHtml}</div>
+        <div class="animal-reward">
+            <div class="animal-emoji" id="animalEmoji"></div>
+            <div class="animal-name" id="animalName"></div>
+        </div>
         <div class="progress-area">
-            <div class="progress-label">Fortschritt: ${state.progress} / ${level.target}</div>
+            <div class="progress-label" id="progressLabel">Fortschritt: ${state.progress} / ${level.target}</div>
             <div class="progress-bar">
-                <div class="progress-fill" style="width:${pct}%"></div>
+                <div class="progress-fill" id="progressFill" style="width:${pct}%"></div>
             </div>
         </div>
         <div class="keyboard-section">
