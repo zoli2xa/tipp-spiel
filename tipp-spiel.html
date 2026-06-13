@@ -176,18 +176,27 @@
             animation: shakeKey 0.35s;
         }
 
-        /* ── Flash overlay ── */
-        .flash-overlay {
-            position: fixed;
-            inset: 0;
-            pointer-events: none;
-            opacity: 0;
-            z-index: 50;
-            transition: opacity 0.1s;
+        /* ── History strip ── */
+        .history-strip {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 3px;
+            min-height: 22px;
+            margin-bottom: 14px;
         }
-        .flash-overlay.correct { background: rgba(168,237,202,0.28); }
-        .flash-overlay.wrong   { background: rgba(255,120,120,0.22); }
-        .flash-overlay.active  { opacity: 1; }
+        .hist {
+            width: 18px;
+            height: 18px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 900;
+            animation: popIn 0.2s cubic-bezier(0.175,0.885,0.32,1.275);
+        }
+        .hist.ok  { background: #a8edca; color: #1e8f5e; }
+        .hist.err { background: #ffcdd2; color: #c62828; }
 
         /* ── Level / Game complete ── */
         .complete-screen { text-align: center; }
@@ -242,7 +251,6 @@
 </head>
 <body>
 <div id="app"></div>
-<div class="flash-overlay" id="flashOverlay"></div>
 
 <script>
 // ════════════════════════════════════════
@@ -322,6 +330,7 @@ let state = {
     lastAnimal: null,
     wrongKey: null,
     shaking: false,
+    history: [],   // "ok" | "err" per keystroke, whole session
 };
 
 // ════════════════════════════════════════
@@ -351,6 +360,7 @@ function startGame() {
         lastAnimal: null,
         wrongKey: null,
         shaking: false,
+        history: [],
     };
     startLevel(0);
 }
@@ -413,6 +423,7 @@ function handleKeyPress(e) {
     } else {
         const target = state.currentItem[state.currentPos].toLowerCase();
         if (key === target) {
+            state.history.push("ok");
             state.currentPos++;
             if (state.currentPos >= state.currentItem.length) {
                 onWordComplete();
@@ -426,6 +437,7 @@ function handleKeyPress(e) {
 }
 
 function onLetterCorrect() {
+    state.history.push("ok");
     state.progress++;
     state.totalScore++;
     if (!checkLevelComplete()) nextItem();
@@ -438,7 +450,6 @@ function onWordComplete() {
         emoji: ANIMAL_EMOJIS[state.currentItem] || "🐾",
         name: state.currentItem
     };
-    flashOverlay("correct", 180);
     patchGame();
     if (!checkLevelComplete()) {
         setTimeout(() => { if (state.screen === "game") nextItem(); }, 1300);
@@ -446,10 +457,10 @@ function onWordComplete() {
 }
 
 function onWrong(key) {
+    state.history.push("err");
     state.hearts--;
     state.wrongKey = key;
     state.shaking = true;
-    flashOverlay("wrong", 350);
     patchGame();
 
     setTimeout(() => {
@@ -480,12 +491,6 @@ function nextLevel() {
         state.screen = "game";
         startLevel(state.levelIdx + 1);
     }
-}
-
-function flashOverlay(type, dur) {
-    const el = document.getElementById("flashOverlay");
-    el.className = `flash-overlay ${type} active`;
-    setTimeout(() => el.className = "flash-overlay", dur);
 }
 
 function getTargetKey() {
@@ -578,6 +583,16 @@ function patchGame() {
             nameEl.className  = "animal-name";
         }
     }
+
+    // History strip — append only the newest item to avoid rebuilding
+    const strip = document.getElementById("historyStrip");
+    if (strip && strip.children.length < state.history.length) {
+        const latest = state.history[state.history.length - 1];
+        const dot = document.createElement("div");
+        dot.className = `hist ${latest}`;
+        dot.textContent = latest === "ok" ? "✓" : "✗";
+        strip.appendChild(dot);
+    }
 }
 
 // ════════════════════════════════════════
@@ -646,6 +661,9 @@ function renderGame() {
             <div class="level-badge">${level.name}: ${level.title}</div>
             <div class="hearts" id="hearts">${heartsHtml}</div>
             <div class="score" id="score">⭐ ${state.totalScore}</div>
+        </div>
+        <div class="history-strip" id="historyStrip">
+            ${state.history.map(h => `<div class="hist ${h}">${h === "ok" ? "✓" : "✗"}</div>`).join("")}
         </div>
         <div class="tip-box">${level.tip}</div>
         <div class="target-area" id="targetArea">${targetHtml}</div>
